@@ -37,7 +37,7 @@ def clean_data(cutoff, path, target):
         edited_review = [[lemmatizer.lemmatize(str(TextBlob(word2).correct())) for word2 in word1  if (word2 not in stop_words)] for word1 in filter_symbols(temp[1])]
         cleaned.append((edited_summary, edited_review))
 
-        if (not(index%10) and index > 0):
+        if (not(index%1000) and index > 0):
             random.shuffle(cleaned)
             with open(target, 'wb') as file:
                 pickle.dump(cleaned, file)
