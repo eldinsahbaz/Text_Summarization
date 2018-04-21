@@ -1,11 +1,9 @@
-import pandas as pd, numpy as np, tensorflow as tf, re, time, sys, contractions, _pickle as pickle, os, emot, inflect, nltk, random
+import pandas as pd, numpy as np, tensorflow as tf, re, time, sys, contractions, _pickle as pickle, os, nltk, random
 from tensorflow.python.ops.rnn_cell_impl import _zero_state_tensors
 from nltk.stem.wordnet import WordNetLemmatizer
 from tensorflow.python.layers.core import Dense
 from nltk.corpus import stopwords
 from collections import Counter
-from textblob import TextBlob
-from emot import EMOTICONS
 from pprint import pprint
 
 def filter_symbols(input_summary, input_text):
