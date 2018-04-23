@@ -3,6 +3,7 @@ from tensorflow.python.ops.rnn_cell_impl import _zero_state_tensors
 from nltk.stem.wordnet import WordNetLemmatizer
 from tensorflow.python.layers.core import Dense
 from nltk.corpus import stopwords
+from multiprocessing import Pool
 from collections import Counter
 from pprint import pprint
 
