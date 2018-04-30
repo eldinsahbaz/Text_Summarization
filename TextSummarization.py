@@ -306,7 +306,7 @@ def test(original, text, max_tokens, DNS, modelDir, modelFileName):
         count_tokens += 1
 
     # Print the input-text.
-    print("Input text:")
+    print("Review text:")
     print(original)
     print()
 
@@ -345,20 +345,9 @@ with tf.device('/device:GPU:0'):
             encoder_input_data = np.array(embedded_reviews)
             decoder_input_data = np.array(embedded_summaries)
             decoder_target_data = prepare_decoder_data(embedded_summaries)
-            #print("encoder", encoder_input_data[0])
-            #print("decoder in", decoder_input_data[0])
-            #print("decoder out", decoder_target_data[0])
 
             model, model_encoder, model_decoder = build_model(max_review_length, len(DNS['forward']))
             train_and_save(model, model_encoder, model_decoder, encoder_input_data, decoder_input_data, decoder_target_data, modelDir, modelFileName)
-            
-            with open(sys.argv[2], 'r') as file:
-                sentences = file.read().split("\n\n")
-                for zero in sentences:
-                    a = np.array(prep_test_data(zero, DNS, max_review_length))
-                    b = a[newaxis,...]
-                    #print(np.shape(b))
-                    test(zero, b, max_summary_length, DNS, modelDir, modelFileName)
 
         elif 'test' == sys.argv[1]:
             with open(word_number_mapping_file, 'rb') as file:
@@ -392,12 +381,3 @@ with tf.device('/device:GPU:0'):
                     b = a[newaxis,...]
                     #print(np.shape(b))
                     test(zero, b, max_summary_length, DNS, modelDir, modelFileName)
-
-'''
-            with open(sys.argv[2], 'r') as file:
-                sentences = file.read().split("\n\n")
-                for zero in sentences:
-                    a = np.array(prep_test_data(zero, DNS, max_review_length))
-                    print(a)
-                    test(zero, a, max_summary_length, DNS, modelDir, modelFileName)
-'''
