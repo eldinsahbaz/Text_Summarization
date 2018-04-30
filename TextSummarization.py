@@ -291,7 +291,9 @@ def test(original, text, max_tokens, DNS, modelDir, modelFileName):
     decoder_input_data = np.zeros(shape=(1, 10), dtype=np.int)
     while token_int != DNS['forward']['<EOS>'] and generated_summary_length < max_summary_length:
         decoder_input_data[0, generated_summary_length] = token_int
-        x_data = {'decoder_initial_state': encoded_cell_state, 'decoder_input': decoder_input_data}
+        x_data = dict()
+        x_data['decoder_initial_state'] = encoded_cell_state
+        x_data['decoder_input'] = decoder_input_data
         next_token = decoder.predict(x_data)
         token_onehot_encoded = next_token[0, generated_summary_length, :]
         token_int = np.argmax(token_onehot_encoded)
