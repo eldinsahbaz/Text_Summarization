@@ -301,15 +301,8 @@ def test(original, text, max_tokens, DNS, modelDir, modelFileName):
         summary += " " + next_word
         generated_summary_length = generated_summary_length + 1
 
-    # Print the input-text.
-    print("Input text:")
-    print(original)
-    print()
-
-    # Print the translated output-text.
-    print("Summary Text:")
-    print(summary)
-    print()
+    print("Review text: " + original)
+    print("Summary Text: " + summary)
 
 def prepare_decoder_data(embedded_summaries):
     decoder_target_data = np.zeros((len(embedded_summaries), max_summary_length), dtype='float32')
