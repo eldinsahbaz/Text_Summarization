@@ -137,8 +137,9 @@ def create_embeddings(data, cutoff, embedding_map_target, embedding_summary_targ
         truncated_summaries.append(temp)
 
     for review in embedded_reviews:
-        temp = list(reversed(review[:max_review_length]))
+        temp = review[:max_review_length]
         temp[-1] = DNS['forward']['<EOS>']
+        temp = list(reversed(temp))
         if len(temp) < max_review_length: temp[0:0] = [DNS['forward']['<PAD>']]*(max_review_length-len(temp))
         truncated_reviews.append(temp)
 
@@ -184,14 +185,14 @@ def create_embeddings(data, cutoff, embedding_map_target, embedding_summary_targ
     return (DNS, cleaned_truncated_summaries, cleaned_truncated_reviews, max_summary_length, max_review_length, min_length, unk_review_limit, unk_summary_limit)
 
 def build_model(num_encoder_tokens, vocab_length):
-    def connect_encoder(input_layer, embedding, recurrent_layers):
+    def build_encoder(input_layer, embedding, recurrent_layers):
         previous_layer = input_layer
         previous_layer = embedding(previous_layer)
         for i in range(len(recurrent_layers)-1):
             previous_layer = recurrent_layers[i](previous_layer)
         return recurrent_layers[-1](previous_layer)
 
-    def connect_decoder(input_layer, embedding, initial_state, recurrent_layers, fully_connected):
+    def build_decoder(input_layer, embedding, initial_state, recurrent_layers, fully_connected):
         previous_layer = input_layer
         previous_layer = embedding(previous_layer)
         for i in range(len(recurrent_layers)): previous_layer = recurrent_layers[i](previous_layer, initial_state=initial_state)
@@ -201,29 +202,28 @@ def build_model(num_encoder_tokens, vocab_length):
     state_size, num_encoders_layers, num_decoder_layers = 128, 2, 2
     encoder_layers, decoder_layers = list(), list()
 
-    embedding_size = num_encoder_tokens
     encoder_input = Input(shape=(None,), name='encoder_input')
     encoder_embedding = Embedding(input_dim=vocab_length, output_dim=128, name='encoder_embedding')
     for i in range(num_encoders_layers-1): encoder_layers.append(CuDNNGRU(state_size, name='encoder_gru{0}'.format(str(i)), return_sequences=True))
     encoder_layers.append(CuDNNGRU(state_size, name='encoder_gru{0}'.format(str(num_encoders_layers)), return_sequences=False))
-    encoder_output = connect_encoder(encoder_input, encoder_embedding, encoder_layers)
+    encoder_output = build_encoder(encoder_input, encoder_embedding, encoder_layers)
 
     decoder_initial_state = Input(shape=(state_size,), name='decoder_initial_state')
     decoder_input = Input(shape=(None,), name='decoder_input')
-    decoder_embedding = Embedding(input_dim=vocab_length, output_dim=embedding_size, name='decoder_embedding')
+    decoder_embedding = Embedding(input_dim=vocab_length, output_dim=num_encoder_tokens, name='decoder_embedding')
     for i in range(num_decoder_layers): decoder_layers.append(CuDNNGRU(state_size, name='decoder_gru{0}'.format(str(i)), return_sequences=True))
-    decoder_dense = Dense(vocab_length, activation='linear', name='decoder_output')
+    decoder_FC = Dense(vocab_length, activation='linear', name='decoder_output')
+    encoder_decoder_output = build_decoder(decoder_input, decoder_embedding, encoder_output, decoder_layers, decoder_FC)
+    decoder_output = build_decoder(decoder_input, decoder_embedding, decoder_initial_state, decoder_layers, decoder_FC)
 
-    decoder_output = connect_decoder(decoder_input, decoder_embedding, encoder_output, decoder_layers, decoder_dense)
-    model_train = Model(inputs=[encoder_input, decoder_input], outputs=[decoder_output])
+    model_train = Model(inputs=[encoder_input, decoder_input], outputs=[encoder_decoder_output])
     model_encoder = Model(inputs=[encoder_input], outputs=[encoder_output])
-
-    decoder_output = connect_decoder(decoder_input, decoder_embedding, decoder_initial_state, decoder_layers, decoder_dense)
     model_decoder = Model(inputs=[decoder_input, decoder_initial_state], outputs=[decoder_output])
+
     decoder_target = tf.placeholder(dtype='int32', shape=(None, None))
+    model_train.compile(optimizer=RMSprop(lr=1e-3), loss=sparse_cross_entropy, target_tensors=[decoder_target])
 
     print(model_train.summary())
-    model_train.compile(optimizer=RMSprop(lr=1e-3), loss=sparse_cross_entropy, target_tensors=[decoder_target])
     return (model_train, model_encoder, model_decoder)
 
 
@@ -266,56 +266,48 @@ def prep_test_data(text, DNS, max_length):
 
     temp_text.append(DNS['forward']['<EOS>'])
 
-    temp_text = list(reversed(temp_text[:max_length]))
+    temp_text = temp_text[:max_length]
     temp_text[-1] = DNS['forward']['<EOS>']
+    temp_text = list(reversed(temp_text))
     if len(temp_text) < max_length: temp_text[0:0] = [DNS['forward']['<PAD>']]*(max_length-len(temp_text))
     
     return temp_text
 
 def test(original, text, max_tokens, DNS, modelDir, modelFileName):
-    
     with open(modelDir + 'encoder_' + modelFileName, 'r') as file:
-        model_encoder = model_from_json(file.read())
-        model_encoder.load_weights(modelDir + 'weights_encoder_' + modelFileName)
+        encoder = model_from_json(file.read())
+        encoder.load_weights(modelDir + 'weights_encoder_' + modelFileName)
 
     with open(modelDir + 'decoder_' + modelFileName, 'r') as file:
-        model_decoder = model_from_json(file.read())
-        model_decoder.load_weights(modelDir + 'weights_decoder_' + modelFileName)
+        decoder = model_from_json(file.read())
+        decoder.load_weights(modelDir + 'weights_decoder_' + modelFileName)
 
-    initial_state = model_encoder.predict(text)
-    #print(initial_state)
-    #print(np.shape(initial_state))
-    output_text = ''
-    count_tokens = 0
+    summary = ''
+    generated_summary_length = 0
+
+    encoded_cell_state = encoder.predict(text)
     token_int = DNS['forward']['<GO>']
-    #print(token_int);
+    #print(token_int)
     decoder_input_data = np.zeros(shape=(1, 10), dtype=np.int)
-    while token_int != DNS['forward']['<EOS>'] and count_tokens < max_tokens:
-
-        x_data = dict()
-        decoder_input_data[0, count_tokens] = token_int
-        x_data['decoder_initial_state'] = initial_state
-        x_data['decoder_input'] = decoder_input_data
-
-        #print(x_data['decoder_input'])
-        decoder_output = model_decoder.predict(x_data)
-        token_onehot = decoder_output[0, count_tokens, :]
-        token_int = np.argmax(token_onehot)
-        sampled_word = DNS['backward'][token_int]
-        output_text += " " + sampled_word
-        count_tokens += 1
+    while token_int != DNS['forward']['<EOS>'] and generated_summary_length < max_summary_length:
+        decoder_input_data[0, generated_summary_length] = token_int
+        x_data = {'decoder_initial_state': encoded_cell_state, 'decoder_input': decoder_input_data}
+        next_token = decoder.predict(x_data)
+        token_onehot_encoded = next_token[0, generated_summary_length, :]
+        token_int = np.argmax(token_onehot_encoded)
+        next_word = DNS['backward'][token_int]
+        summary += " " + next_word
+        generated_summary_length = generated_summary_length + 1
 
     # Print the input-text.
-    print("Review text:")
+    print("Input text:")
     print(original)
     print()
 
     # Print the translated output-text.
     print("Summary Text:")
-    print(output_text)
+    print(summary)
     print()
-
-    return None
 
 def prepare_decoder_data(embedded_summaries):
     decoder_target_data = np.zeros((len(embedded_summaries), max_summary_length), dtype='float32')
@@ -345,9 +337,20 @@ with tf.device('/device:GPU:0'):
             encoder_input_data = np.array(embedded_reviews)
             decoder_input_data = np.array(embedded_summaries)
             decoder_target_data = prepare_decoder_data(embedded_summaries)
+            #print("encoder", encoder_input_data[0])
+            #print("decoder in", decoder_input_data[0])
+            #print("decoder out", decoder_target_data[0])
 
             model, model_encoder, model_decoder = build_model(max_review_length, len(DNS['forward']))
             train_and_save(model, model_encoder, model_decoder, encoder_input_data, decoder_input_data, decoder_target_data, modelDir, modelFileName)
+            
+            with open(sys.argv[2], 'r') as file:
+                sentences = file.read().split("\n\n")
+                for zero in sentences:
+                    a = np.array(prep_test_data(zero, DNS, max_review_length))
+                    b = a[newaxis,...]
+                    #print(np.shape(b))
+                    test(zero, b, max_summary_length, DNS, modelDir, modelFileName)
 
         elif 'test' == sys.argv[1]:
             with open(word_number_mapping_file, 'rb') as file:
