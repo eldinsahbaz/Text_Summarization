@@ -81,7 +81,7 @@ def create_embeddings(data, cutoff, embedding_map_target, embedding_summary_targ
         words.extend(sum(summary, []))
         words.extend(sum(review, []))
 
-    word_frequencies = [x for x in sorted(Counter(words).items(), key=lambda x: x[1], reverse=True) if (x[1] >= cutoff)][:1000] #(x[0] not in stop_words)
+    word_frequencies = [x for x in sorted(Counter(words).items(), key=lambda x: x[1], reverse=True) if (x[1] >= cutoff)] #[:1000] #(x[0] not in stop_words)
 
     if word_frequencies:
         words, freqs = list(zip(*word_frequencies))
